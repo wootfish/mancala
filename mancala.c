@@ -12,11 +12,14 @@
  *
  */
 
+#include <string.h>
+#include <time.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
 
-#define DEBUG 0
+#define NAIVE_MCTS_NUM_PATHS 200000
+#define DEBUG 1
 #define debug_print(...) \
     do { if (DEBUG) {fprintf(stderr, "[DEBUG] "); fprintf(stderr, __VA_ARGS__);} } while (0)
 
@@ -37,6 +40,8 @@ move_result play_move(board *game_board, player which_player, char move);
 void draw_board(board game_board, player whose_turn);
 char get_move(board game_board, player which_player);
 void play_game(board *game_board, move_function p1_player, move_function p2_player);
+char pick_random_move(char side[]);
+char pick_move_naive_mcts(board game_board, player which_player);
 
 bool is_game_over(board *game_board) {
     int i;
@@ -175,6 +180,7 @@ void draw_board(board game_board, player whose_turn) {
     //  |  |  |   | |   | |   | |   | |   | |   | |  |
     //  \--/  \---/ \---/ \---/ \---/ \---/ \---/ \--/
 
+    printf("\n");
     printf("                   0     1     2     3     4     5\n");
     printf("           /--\\  /---\\ /---\\ /---\\ /---\\ /---\\ /---\\ /--\\\n");
 
@@ -204,13 +210,12 @@ void draw_board(board game_board, player whose_turn) {
     }
 
     printf("           \\--/  \\---/ \\---/ \\---/ \\---/ \\---/ \\---/ \\--/\n");
+    printf("\n");
 }
 
 char get_move(board game_board, player which_player) {
     int move_choice;
-    debug_print("[get_move] (top of function)\n");
 
-    draw_board(game_board, which_player);
     if (which_player == PLAYER_1)
         printf("Please input move for player 1.\n");
     else
@@ -239,6 +244,8 @@ void play_game(board *game_board, move_function p1_player, move_function p2_play
     move_result result;
 
     while (true) {
+        draw_board(*game_board, curr_player);
+
         if (curr_player == PLAYER_1) {
             debug_print("[play_game] Main loop: Player 1's turn.\n");
             move = (*p1_player)(*game_board, curr_player);
@@ -248,6 +255,7 @@ void play_game(board *game_board, move_function p1_player, move_function p2_play
         }
 
         result = play_move(game_board, curr_player, move);
+        debug_print("[play_game] Player chose %d\n", move);
 
         switch (result) {
             case TURN_OVER:
@@ -273,12 +281,101 @@ void play_game(board *game_board, move_function p1_player, move_function p2_play
     }
 }
 
+char pick_random_move(char side[]) {
+    int divisor;
+    int move;
+
+    divisor = RAND_MAX/6;
+    do {
+        do {
+            move = rand() / divisor;
+        } while (move > 5);
+    } while (side[move] == 0);
+
+    //debug_print("Picked random move %d (house has %d stones)\n", move, side[move]);
+
+    return move;
+}
+
+char pick_move_naive_mcts(board game_board, player which_player) {
+    // picks moves using naive monte carlo tree search
+    // (randomly samples tree paths using random heuristic, attempts to
+    // minimize chance of loss)
+    board test_board;
+    char first_move;
+    int i;
+    unsigned long int p1_count[6] = {0};
+    unsigned long int p2_count[6] = {0};
+    char *side;
+    player curr_player = which_player;
+    move_result result;
+
+    printf("\nAI is thinking... (strategy: naive monte carlo tree search)\n");
+
+    for (i = 0; i < NAIVE_MCTS_NUM_PATHS; i++) {
+        memcpy(&test_board, &game_board, 14);
+        first_move = pick_random_move(curr_player == PLAYER_1? test_board.p1 : test_board.p2);
+        result = play_move(&test_board, curr_player, first_move);
+
+        while (result != GAME_OVER) {
+            if (result == ILLEGAL_MOVE) {
+                printf("AI chose an illegal move! Debug this!!\n");
+                exit(1);
+            }
+
+            if (result == TURN_OVER) {
+                curr_player ^= 1;
+            }
+
+            result = play_move(&test_board, curr_player,
+                    pick_random_move(curr_player == PLAYER_1? test_board.p1 : test_board.p2));
+        }
+
+        if (test_board.p1_store > test_board.p2_store) {
+            p1_count[first_move] += 1;
+        } else if (test_board.p1_store < test_board.p2_store) {
+            p2_count[first_move] += 1;
+        } else {
+            // tie
+            p1_count[first_move] += 1;
+            p2_count[first_move] += 1;
+        }
+    }
+
+    debug_print("p1_count: %lu %lu %lu %lu %lu %lu\n", p1_count[0], p1_count[1], p1_count[2], p1_count[3], p1_count[4], p1_count[5]);
+    debug_print("p2_count: %lu %lu %lu %lu %lu %lu\n", p2_count[0], p1_count[1], p2_count[2], p2_count[3], p2_count[4], p2_count[5]);
+
+    char best_move;
+    int score_gap;
+    int best_gap = -NAIVE_MCTS_NUM_PATHS;
+    for (i = 0; i < 6; i++) {
+        if (p1_count[i] == 0 && p2_count[i] == 0) continue;
+        if (p1_count[i] == 0 && which_player == PLAYER_1) continue;
+        if (p2_count[i] == 0 && which_player == PLAYER_2) continue;
+
+        score_gap = p1_count[i] - p2_count[i];
+        if (which_player == PLAYER_2) score_gap *= -1;
+        if (score_gap >= best_gap) {
+            best_move = i;
+            best_gap = score_gap;
+        }
+    }
+
+    debug_print("best_move: %d   best_gap: %d\n", best_move, best_gap);
+    printf("\n    AI chose move #%d.\n\n", best_move);
+
+    return best_move;
+}
+
 int main(int argc, char* argv[]) {
-    debug_print("Main starting...\n");
+    time_t rand_seed = time(NULL);
+    debug_print("Seeding RNG with value %ld\n", rand_seed);
+    srand(rand_seed);
+
     board main_board = {0, 4, 4, 4, 4, 4, 4,
                         4, 4, 4, 4, 4, 4, 0};
 
     debug_print("play_game starting...\n");
-    play_game(&main_board, &get_move, &get_move);
+    play_game(&main_board, &get_move, &pick_move_naive_mcts);
 }
 
