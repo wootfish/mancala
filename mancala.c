@@ -151,7 +151,7 @@ move_result play_move(board *game_board, player which_player, char move) {
         game_board->p1[curr_house] = 0;
         game_board->p2[curr_house] = 0;
         if (is_game_over(game_board)) return GAME_OVER;
-        return EXTRA_TURN;
+        return TURN_OVER;
 
     } else if (curr_side == PLAYER_2 &&
                which_player == PLAYER_2 &&
@@ -163,7 +163,7 @@ move_result play_move(board *game_board, player which_player, char move) {
         game_board->p1[curr_house] = 0;
         game_board->p2[curr_house] = 0;
         if (is_game_over(game_board)) return GAME_OVER;
-        return EXTRA_TURN;
+        return TURN_OVER;
     }
 
     if (is_game_over(game_board)) return GAME_OVER;
